@@ -193,7 +193,7 @@ def chat(req: ChatRequest):
 
     try:
         response = client.messages.create(
-            model="claude_sonnet_4_6",
+            model="claude-3-5-sonnet-20241022",
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=anthropic_messages,
