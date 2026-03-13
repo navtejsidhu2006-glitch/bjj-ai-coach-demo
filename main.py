@@ -304,7 +304,17 @@ class ChatResponse(BaseModel):
 @app.get("/health")
 def health():
     """Liveness probe."""
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "gemini_configured": bool(GEMINI_API_KEY),
+        "anthropic_configured": bool(os.environ.get("ANTHROPIC_API_KEY"))
+    }
+
+@app.get("/test-gemini")
+def test_gemini():
+    """Quick test of Gemini video analysis."""
+    result = analyze_video_with_gemini("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    return {"result": result[:300]}
 
 
 @app.post("/chat", response_model=ChatResponse)
