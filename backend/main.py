@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
+import google.generativeai as genai
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -176,6 +177,43 @@ def fetch_transcript(video_id: str, max_chars: int = 8000) -> str:
     except Exception as e:
         return f"ERROR: Could not fetch transcript — {str(e)}"
 
+# ---------------------------------------------------------------------------
+# Gemini video analysis
+# ---------------------------------------------------------------------------
+
+GEMINI_API_KEY = os.environ.get("GOOGLE_API_KEY")
+
+GEMINI_VIDEO_PROMPT = """You are a BJJ/grappling analyst. Watch this match video carefully and provide:
+1. The guard style each athlete plays (closed, half, De La Riva, lasso, butterfly, x-guard, etc.)
+2. Passing game for each athlete (torreando, knee cut, leg drag, pressure pass, etc.)
+3. Submission attempts and finishes
+4. Takedown and wrestling style
+5. Top game tendencies
+6. Any clear patterns, habits, or tendencies you notice
+7. Identified weaknesses or predictable sequences
+
+Be specific and technical. Focus on the athlete wearing [describe both if unclear].
+Format as a structured scouting report."""
+
+def analyze_video_with_gemini(video_url: str) -> str:
+    """
+    Use Gemini 1.5 Pro to analyze a YouTube video directly.
+    Returns a scouting report string or an error message.
+    """
+    if not GEMINI_API_KEY:
+        return "ERROR: No Gemini API key configured."
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel("gemini-1.5-pro")
+        response = model.generate_content([
+            GEMINI_VIDEO_PROMPT,
+            {"video_url": video_url}
+        ])
+        return response.text
+    except Exception as e:
+        return f"ERROR: Gemini video analysis failed — {str(e)}"
+
+
 SCOUTING_QUESTIONS = """
 [SYSTEM NOTE: No captions are available for this YouTube video, so I cannot read its content.
 Do NOT tell the athlete you "can't watch videos" or lecture them.
@@ -204,14 +242,27 @@ def inject_transcripts(messages: list) -> list:
             if urls:
                 transcript_blocks = []
                 for vid_id in urls:
+                    full_url = f"https://www.youtube.com/watch?v={vid_id}"
+                    # 1. Try YouTube transcript (free, instant)
                     transcript = fetch_transcript(vid_id)
-                    if transcript.startswith('ERROR'):
-                        # No transcript — inject scouting questions prompt
-                        transcript_blocks.append(SCOUTING_QUESTIONS)
-                    else:
+                    if not transcript.startswith('ERROR'):
                         transcript_blocks.append(
-                            f"[YouTube video {vid_id} transcript]:\n{transcript}\n[/transcript]"
+                            f"[YouTube transcript for {full_url}]:\n{transcript}\n[/transcript]"
                         )
+                    else:
+                        # 2. Try Gemini video analysis (watches actual frames)
+                        if GEMINI_API_KEY:
+                            gemini_report = analyze_video_with_gemini(full_url)
+                            if not gemini_report.startswith('ERROR'):
+                                transcript_blocks.append(
+                                    f"[Gemini video analysis for {full_url}]:\n{gemini_report}\n[/analysis]"
+                                )
+                            else:
+                                # 3. Both failed — ask scouting questions
+                                transcript_blocks.append(SCOUTING_QUESTIONS)
+                        else:
+                            # No Gemini key — ask scouting questions
+                            transcript_blocks.append(SCOUTING_QUESTIONS)
                 extra = '\n\n' + '\n\n'.join(transcript_blocks)
                 enriched.append({**msg, 'content': msg['content'] + extra})
                 continue
