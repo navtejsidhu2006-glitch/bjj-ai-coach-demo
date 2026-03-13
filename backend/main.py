@@ -222,9 +222,10 @@ def analyze_video_with_gemini(video_url: str) -> str:
 
 
 SCOUTING_QUESTIONS = """
-[SYSTEM NOTE: No captions are available for this YouTube video, so I cannot read its content.
+[SYSTEM NOTE: No captions are available for this YouTube video, and video analysis is temporarily unavailable.
 Do NOT tell the athlete you "can't watch videos" or lecture them.
-Instead, respond warmly and immediately ask ALL of the following scouting questions in one message:
+Instead, respond warmly and tell them: "I couldn't pull the video automatically this time (the analysis service is at its limit right now) — but that's no problem, just describe what you see and I'll build the full scouting report."
+Then immediately ask ALL of the following scouting questions in one message:
 1. What guard does the opponent play (closed, half, De La Riva, lasso, butterfly, etc.)?
 2. How does the opponent pass guard (torreando, knee cut, leg drag, pressure, etc.)?
 3. What are the opponent's favourite submission attempts?
@@ -232,8 +233,21 @@ Instead, respond warmly and immediately ask ALL of the following scouting questi
 5. Does the opponent prefer top or bottom position?
 6. What ruleset is this match under (gi/no-gi, points/sub-only)?
 7. What is your own A-game — best positions and go-to submissions?
-Be encouraging and frame it as: "This video doesn't have captions so I can't read it directly — 
-describe what you see and I'll build the full scouting report from your answers."]
+Be warm and get straight to the questions.]
+"""
+
+SCOUTING_QUESTIONS_RATE_LIMITED = """
+[SYSTEM NOTE: The user pasted a YouTube URL. The video has no captions, and the Gemini video analysis service hit a rate limit right now.
+Do NOT say "I can't watch videos". Do NOT be negative or technical about the error.
+Instead, respond warmly and naturally: acknowledge the video link, say you hit a brief limit on the video analysis service, and immediately pivot to asking ALL of the following scouting questions so you can still build the full report:
+1. What guard does the opponent play (closed, half, De La Riva, lasso, butterfly, etc.)?
+2. How does the opponent pass guard (torreando, knee cut, leg drag, pressure, etc.)?
+3. What are the opponent's favourite submission attempts?
+4. How is the opponent's takedown/wrestling game?
+5. Does the opponent prefer top or bottom position?
+6. What ruleset is this match under (gi/no-gi, points/sub-only)?
+7. What is your own A-game — best positions and go-to submissions?
+Keep the tone confident and helpful — the coach can still build a great gameplan from the athlete's description.]
 """
 
 def inject_transcripts(messages: list) -> list:
@@ -258,14 +272,17 @@ def inject_transcripts(messages: list) -> list:
                         )
                     else:
                         # 2. Try Gemini video analysis (watches actual frames)
-                        if GEMINI_API_KEY:
+                        if GEMINI_CLIENT:
                             gemini_report = analyze_video_with_gemini(full_url)
                             if not gemini_report.startswith('ERROR'):
                                 transcript_blocks.append(
                                     f"[Gemini video analysis for {full_url}]:\n{gemini_report}\n[/analysis]"
                                 )
+                            elif '429' in gemini_report or 'RESOURCE_EXHAUSTED' in gemini_report or 'quota' in gemini_report.lower():
+                                # Rate limited — tell the coach to explain and ask questions
+                                transcript_blocks.append(SCOUTING_QUESTIONS_RATE_LIMITED)
                             else:
-                                # 3. Both failed — ask scouting questions
+                                # 3. Other Gemini failure — generic scouting questions
                                 transcript_blocks.append(SCOUTING_QUESTIONS)
                         else:
                             # No Gemini key — ask scouting questions
