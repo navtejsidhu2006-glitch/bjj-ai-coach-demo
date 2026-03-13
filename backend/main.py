@@ -176,10 +176,24 @@ def fetch_transcript(video_id: str, max_chars: int = 8000) -> str:
     except Exception as e:
         return f"ERROR: Could not fetch transcript — {str(e)}"
 
+SCOUTING_QUESTIONS = """
+[SYSTEM NOTE: No transcript available for this video. 
+Please ask the athlete these structured scouting questions about what they see:
+1. What guard does the opponent play (closed, half, De La Riva, lasso, butterfly, etc.)?
+2. How does the opponent pass guard (torreando, knee cut, leg drag, pressure, etc.)?
+3. What are the opponent's favourite submission attempts?
+4. How is the opponent's takedown/wrestling game?
+5. Does the opponent prefer top or bottom position?
+6. What ruleset is this match under?
+7. What is the athlete's own A-game to compare against?
+Ask all of these in one concise message.]
+"""
+
 def inject_transcripts(messages: list) -> list:
     """
     Scan user messages for YouTube URLs. For each URL found, fetch the transcript
     and append it to that message so the LLM can analyse it.
+    If no transcript is available, inject structured scouting questions instead.
     """
     enriched = []
     for msg in messages:
@@ -190,9 +204,8 @@ def inject_transcripts(messages: list) -> list:
                 for vid_id in urls:
                     transcript = fetch_transcript(vid_id)
                     if transcript.startswith('ERROR'):
-                        transcript_blocks.append(
-                            f"[YouTube video {vid_id}: {transcript}]"
-                        )
+                        # No transcript — inject scouting questions prompt
+                        transcript_blocks.append(SCOUTING_QUESTIONS)
                     else:
                         transcript_blocks.append(
                             f"[YouTube video {vid_id} transcript]:\n{transcript}\n[/transcript]"
