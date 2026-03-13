@@ -8,16 +8,15 @@
  *  - Markdown rendered via react-markdown; URLs clickable.
  */
 
-import { useState, useRef, useEffect, KeyboardEvent, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 // ── Backend URL ────────────────────────────────────────────────────────────
-// __PORT_8000__ is replaced by the proxy path at deploy time.
-// During local dev it stays as the literal string, so we fall back to localhost.
-const API_BASE = "__PORT_8000__".startsWith("__")
-  ? "http://localhost:8000"
-  : "__PORT_8000__";
+// VITE_API_URL env var is set at deploy time via the port proxy.
+// Falls back to localhost:8000 for local development.
+const API_BASE: string =
+  (import.meta.env.VITE_API_URL as string | undefined) || "http://localhost:8000";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface Message {
