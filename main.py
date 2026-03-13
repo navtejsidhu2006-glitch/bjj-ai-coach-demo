@@ -19,6 +19,8 @@ import anthropic
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -52,11 +54,12 @@ them as such. Be direct, specific, and practical.
    - Opponent weight class, approximate skill level, and known competition record if available.
    Do NOT skip these questions on a first request about an opponent.
 
-2. **YouTube / video links.** If the user pastes YouTube or video URLs, acknowledge them but \
-explain you cannot watch them. Instead, ask the user to describe what happens in those matches \
-(e.g., "What guard does the opponent play most? What passes does he chain? What are his favourite \
-submission threats? How does he react when taken down?"). Use those descriptions as your \
-primary scouting data.
+2. **YouTube / video links.** If the user pastes a YouTube URL, the system will automatically \
+fetch the video transcript and append it to the message in a [YouTube video transcript] block. \
+Read that transcript carefully to extract scouting information — commentary, technique names, \
+position descriptions, and tendencies mentioned. If no transcript is available (ERROR message), \
+tell the user and ask them to describe what they see instead. \
+Note: transcripts are audio/commentary only — no visual frame analysis.
 
 3. **Opponent profile.** Once you have enough information, generate a structured opponent profile \
 in this exact JSON block followed by a plain-English summary:
@@ -139,6 +142,68 @@ DEMO_LIBRARY: dict[str, str] = {
     "darce choke":            "https://www.youtube.com/watch?v=WZ8KHXPOHSE",
 }
 
+# ---------------------------------------------------------------------------
+# YouTube transcript helpers
+# ---------------------------------------------------------------------------
+
+YT_REGEX = re.compile(
+    r'(?:https?://)?(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([A-Za-z0-9_-]{11})'
+)
+
+def extract_video_id(url: str) -> str | None:
+    """Extract YouTube video ID from a URL."""
+    m = YT_REGEX.search(url)
+    return m.group(1) if m else None
+
+def fetch_transcript(video_id: str, max_chars: int = 8000) -> str:
+    """
+    Fetch the transcript for a YouTube video.
+    Returns the transcript text (truncated to max_chars) or an error message.
+    """
+    try:
+        api = YouTubeTranscriptApi()
+        transcript = api.fetch(video_id)
+        text = ' '.join([t.text for t in transcript])
+        if len(text) > max_chars:
+            text = text[:max_chars] + '... [transcript truncated]'
+        return text
+    except VideoUnavailable:
+        return "ERROR: Video is unavailable or private."
+    except TranscriptsDisabled:
+        return "ERROR: Transcripts are disabled for this video."
+    except NoTranscriptFound:
+        return "ERROR: No transcript/captions found for this video."
+    except Exception as e:
+        return f"ERROR: Could not fetch transcript — {str(e)}"
+
+def inject_transcripts(messages: list) -> list:
+    """
+    Scan user messages for YouTube URLs. For each URL found, fetch the transcript
+    and append it to that message so the LLM can analyse it.
+    """
+    enriched = []
+    for msg in messages:
+        if msg['role'] == 'user':
+            urls = YT_REGEX.findall(msg['content'])
+            if urls:
+                transcript_blocks = []
+                for vid_id in urls:
+                    transcript = fetch_transcript(vid_id)
+                    if transcript.startswith('ERROR'):
+                        transcript_blocks.append(
+                            f"[YouTube video {vid_id}: {transcript}]"
+                        )
+                    else:
+                        transcript_blocks.append(
+                            f"[YouTube video {vid_id} transcript]:\n{transcript}\n[/transcript]"
+                        )
+                extra = '\n\n' + '\n\n'.join(transcript_blocks)
+                enriched.append({**msg, 'content': msg['content'] + extra})
+                continue
+        enriched.append(msg)
+    return enriched
+
+
 def find_demo_links(text: str) -> list[tuple[str, str]]:
     """Return (technique_name, url) pairs for any technique keywords found in the text."""
     text_lower = text.lower()
@@ -189,7 +254,10 @@ def chat(req: ChatRequest):
         raise HTTPException(status_code=400, detail="No messages provided.")
 
     # Build the messages list for the Anthropic API
-    anthropic_messages = [{"role": m.role, "content": m.content} for m in user_messages]
+    raw_messages = [{"role": m.role, "content": m.content} for m in user_messages]
+
+    # Inject YouTube transcripts into any user messages that contain YouTube URLs
+    anthropic_messages = inject_transcripts(raw_messages)
 
     try:
         response = client.messages.create(
