@@ -21,7 +21,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
-import google.generativeai as genai
+from google import genai as google_genai
+from google.genai import types as genai_types
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -182,6 +183,7 @@ def fetch_transcript(video_id: str, max_chars: int = 8000) -> str:
 # ---------------------------------------------------------------------------
 
 GEMINI_API_KEY = os.environ.get("GOOGLE_API_KEY")
+GEMINI_CLIENT = google_genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 GEMINI_VIDEO_PROMPT = """You are a BJJ/grappling analyst. Watch this match video carefully and provide:
 1. The guard style each athlete plays (closed, half, De La Riva, lasso, butterfly, x-guard, etc.)
@@ -197,18 +199,23 @@ Format as a structured scouting report."""
 
 def analyze_video_with_gemini(video_url: str) -> str:
     """
-    Use Gemini 1.5 Pro to analyze a YouTube video directly.
+    Use Gemini 2.0 Flash to analyze a YouTube video directly.
     Returns a scouting report string or an error message.
     """
-    if not GEMINI_API_KEY:
+    if not GEMINI_CLIENT:
         return "ERROR: No Gemini API key configured."
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-1.5-pro")
-        response = model.generate_content([
-            GEMINI_VIDEO_PROMPT,
-            {"video_url": video_url}
-        ])
+        response = GEMINI_CLIENT.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=genai_types.Content(
+                parts=[
+                    genai_types.Part(
+                        file_data=genai_types.FileData(file_uri=video_url)
+                    ),
+                    genai_types.Part(text=GEMINI_VIDEO_PROMPT)
+                ]
+            )
+        )
         return response.text
     except Exception as e:
         return f"ERROR: Gemini video analysis failed — {str(e)}"
