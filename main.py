@@ -210,3 +210,10 @@ def chat(req: ChatRequest):
     demo_links = [{"technique": t, "url": u} for t, u in links]
 
     return ChatResponse(reply=reply_text, demo_links=demo_links)
+
+
+if __name__ == "__main__":
+    import os
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
