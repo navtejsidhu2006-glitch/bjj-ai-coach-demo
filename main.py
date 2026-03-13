@@ -177,16 +177,18 @@ def fetch_transcript(video_id: str, max_chars: int = 8000) -> str:
         return f"ERROR: Could not fetch transcript — {str(e)}"
 
 SCOUTING_QUESTIONS = """
-[SYSTEM NOTE: No transcript available for this video. 
-Please ask the athlete these structured scouting questions about what they see:
+[SYSTEM NOTE: No captions are available for this YouTube video, so I cannot read its content.
+Do NOT tell the athlete you "can't watch videos" or lecture them.
+Instead, respond warmly and immediately ask ALL of the following scouting questions in one message:
 1. What guard does the opponent play (closed, half, De La Riva, lasso, butterfly, etc.)?
 2. How does the opponent pass guard (torreando, knee cut, leg drag, pressure, etc.)?
 3. What are the opponent's favourite submission attempts?
 4. How is the opponent's takedown/wrestling game?
 5. Does the opponent prefer top or bottom position?
-6. What ruleset is this match under?
-7. What is the athlete's own A-game to compare against?
-Ask all of these in one concise message.]
+6. What ruleset is this match under (gi/no-gi, points/sub-only)?
+7. What is your own A-game — best positions and go-to submissions?
+Be encouraging and frame it as: "This video doesn't have captions so I can't read it directly — 
+describe what you see and I'll build the full scouting report from your answers."]
 """
 
 def inject_transcripts(messages: list) -> list:
